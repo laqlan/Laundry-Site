@@ -18,22 +18,27 @@ export default function Navigation() {
 
   return (
     <nav className="bg-white shadow-lg sticky top-0 z-50">
-      {/* Greek meander border — 20×20 tile, 2px stroke, 2px gap, single-channel spiral */}
-      <div style={{ height: '20px', backgroundColor: '#1199B6', overflow: 'hidden' }}>
-        <svg width="100%" height="20" xmlns="http://www.w3.org/2000/svg" style={{ display: 'block' }}>
+      {/* iPhone notch / dynamic island safe-area fill */}
+      <div style={{ height: 'env(safe-area-inset-top)', backgroundColor: '#174d81' }} />
+      {/* Greek meander border */}
+      <div style={{ height: '30px', backgroundColor: '#174d81', overflow: 'hidden' }}>
+        <svg width="100%" height="30" xmlns="http://www.w3.org/2000/svg" style={{ display: 'block' }} shapeRendering="crispEdges">
           <defs>
-            <pattern id="greek-key" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+            <pattern id="greek-key" x="0" y="0" width="18" height="30" patternUnits="userSpaceOnUse">
+              {/* Bottom bar only */}
+              <rect x="0" y="27" width="18" height="3" fill="white" />
+              {/* Spiral body + right-side bridge connector */}
               <path
-                d="M 0,9 L 2,9 L 2,1 L 18,1 L 18,17 L 6,17 L 6,5 L 14,5 L 14,13 L 10,13 L 10,9 L 20,9"
+                d="M 0,26 L 15,26 L 15,8 L 3,8 L 3,18 L 11,18 L 11,13 L 7,13 M 15,26 L 18,26"
                 stroke="white"
-                strokeWidth="2"
+                strokeWidth="3"
                 fill="none"
-                strokeLinecap="butt"
+                strokeLinecap="square"
                 strokeLinejoin="miter"
               />
             </pattern>
           </defs>
-          <rect width="100%" height="20" fill="url(#greek-key)" />
+          <rect width="100%" height="30" fill="url(#greek-key)" />
         </svg>
       </div>
 
