@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import heroImage from '../../media/1778715590061-019e23b5-63ed-7d60-aca4-0131e66e8533.png';
 import verifiedBadge from '../../media/instagram-verified-symbol-instagram-verified-logo-cross-graphics-art-transparent-png-806692.png';
@@ -34,20 +34,117 @@ const slides = [
 ];
 
 export default function HomePage() {
-  const [currentSlide, setCurrentSlide] = useState(0);
+  // internalIdx: 0 = clone of last, 1..N = real slides, N+1 = clone of first
+  const [internalIdx, setInternalIdx] = useState(1);
+  const [transitionOn, setTransitionOn] = useState(true);
+  const [dragOffset, setDragOffset] = useState(0);
+  // bumping this resets the auto-advance timer after manual interaction
+  const [autoKey, setAutoKey] = useState(0);
 
-  const goToSlide = useCallback((index: number) => {
-    setCurrentSlide(index);
+  const sectionRef = useRef<HTMLElement>(null);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const touchStartTime = useRef(0);
+  const dragOffsetRef = useRef(0);
+  const isDraggingRef = useRef(false);
+  const isHorizontalRef = useRef<boolean | null>(null);
+
+  // extended track: [last, slide1, slide2, slide3, first]
+  const extSlides = [slides[slides.length - 1], ...slides, slides[0]];
+  const visualIdx = ((internalIdx - 1) % slides.length + slides.length) % slides.length;
+
+  const goNext = useCallback(() => {
+    setTransitionOn(true);
+    setInternalIdx(prev => prev + 1);
   }, []);
 
+  const goPrev = useCallback(() => {
+    setTransitionOn(true);
+    setInternalIdx(prev => prev - 1);
+  }, []);
+
+  const goToSlide = useCallback((vi: number) => {
+    setTransitionOn(true);
+    setDragOffset(0);
+    dragOffsetRef.current = 0;
+    setInternalIdx(vi + 1);
+    setAutoKey(k => k + 1);
+  }, []);
+
+  // After the CSS transition ends, silently jump for infinite loop
+  const handleTransitionEnd = useCallback(() => {
+    setInternalIdx(prev => {
+      if (prev === slides.length + 1) { setTransitionOn(false); return 1; }
+      if (prev === 0)                  { setTransitionOn(false); return slides.length; }
+      return prev;
+    });
+  }, []);
+
+  // Auto-advance at 3.5 s; resets whenever autoKey changes
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentSlide(prev => (prev + 1) % slides.length);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, []);
+    const t = setInterval(goNext, 3500);
+    return () => clearInterval(t);
+  }, [goNext, autoKey]);
 
-  const slide = slides[currentSlide];
+  // Native touch listeners so we can call preventDefault on touchmove
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el) return;
+
+    const onStart = (e: TouchEvent) => {
+      touchStartX.current = e.touches[0].clientX;
+      touchStartY.current = e.touches[0].clientY;
+      touchStartTime.current = Date.now();
+      isDraggingRef.current = true;
+      isHorizontalRef.current = null;
+      dragOffsetRef.current = 0;
+      setTransitionOn(false);
+      setDragOffset(0);
+    };
+
+    const onMove = (e: TouchEvent) => {
+      if (!isDraggingRef.current) return;
+      const dx = e.touches[0].clientX - touchStartX.current;
+      const dy = e.touches[0].clientY - touchStartY.current;
+      if (isHorizontalRef.current === null) {
+        isHorizontalRef.current = Math.abs(dx) > Math.abs(dy);
+      }
+      if (isHorizontalRef.current) {
+        e.preventDefault();
+        dragOffsetRef.current = dx;
+        setDragOffset(dx);
+      }
+    };
+
+    const onEnd = () => {
+      if (!isDraggingRef.current) return;
+      isDraggingRef.current = false;
+      const offset = dragOffsetRef.current;
+      const velocity = Math.abs(offset) / (Date.now() - touchStartTime.current);
+      dragOffsetRef.current = 0;
+      setDragOffset(0);
+      setTransitionOn(true);
+      setAutoKey(k => k + 1);
+      if (isHorizontalRef.current) {
+        if (offset < -50 || (offset < 0 && velocity > 0.3)) {
+          setInternalIdx(prev => prev + 1);
+        } else if (offset > 50 || (offset > 0 && velocity > 0.3)) {
+          setInternalIdx(prev => prev - 1);
+        }
+      }
+    };
+
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, []);
 
   const testimonials = [
     {
@@ -75,78 +172,116 @@ export default function HomePage() {
       {/* Navigation is handled by the Navigation component */}
 
       {/* Hero Slideshow */}
-      <section
-        className="relative bg-cover bg-center py-12 lg:py-20 overflow-hidden transition-all duration-700"
-        style={{ backgroundImage: `url(${slide.backgroundImage})`, backgroundAttachment: 'fixed' }}
-      >
-        <div className="absolute inset-0 bg-black/40" />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="max-w-2xl">
-            {/* Logo + Brand */}
-            <div className="flex items-center gap-3 mb-8">
-              <img
-                src="https://static.wixstatic.com/media/bc3598_4ef75b3ee4364af5b2f09e53862ffe0e~mv2.png/v1/fill/w_490,h_496,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Laundromatgreece.png"
-                alt="LaundromatGreece Logo"
-                className="h-14 w-14 object-contain"
-              />
-              <div className="flex items-center gap-2">
-                <h2 className="text-2xl font-bold text-white">Laundromat Greece</h2>
-                <img src={verifiedBadge} alt="Verified" className="h-9 w-9 object-contain drop-shadow-lg flex-shrink-0" />
+      <section ref={sectionRef} className="relative overflow-hidden">
+        {/* Sliding track — extSlides: [clone-last, ...slides, clone-first] */}
+        <div
+          className="flex"
+          style={{
+            transform: `translateX(calc(-${internalIdx * 100}% + ${dragOffset}px))`,
+            transition: transitionOn ? 'transform 500ms ease-in-out' : 'none',
+            willChange: 'transform',
+          }}
+          onTransitionEnd={handleTransitionEnd}
+        >
+          {extSlides.map((s, i) => (
+            <div
+              key={i}
+              className="min-w-full relative bg-cover bg-center py-12 lg:py-20"
+              style={{ backgroundImage: `url(${s.backgroundImage})`, backgroundAttachment: 'fixed' }}
+            >
+              <div className="absolute inset-0 bg-black/40" />
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                <div className="max-w-2xl">
+                  {/* Logo + Brand */}
+                  <div className="flex items-center gap-3 mb-8">
+                    <img
+                      src="https://static.wixstatic.com/media/bc3598_4ef75b3ee4364af5b2f09e53862ffe0e~mv2.png/v1/fill/w_490,h_496,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Laundromatgreece.png"
+                      alt="LaundromatGreece Logo"
+                      className="h-14 w-14 object-contain"
+                    />
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-2xl font-bold text-white">Laundromat Greece</h2>
+                      <img src={verifiedBadge} alt="Verified" className="h-9 w-9 object-contain drop-shadow-lg flex-shrink-0" />
+                    </div>
+                  </div>
+
+                  {/* Headline */}
+                  <h1 className="text-4xl lg:text-5xl font-bold text-white leading-tight mb-5">
+                    {s.headline}
+                  </h1>
+
+                  {/* Subtitle */}
+                  <p className="text-base lg:text-lg text-gray-100 leading-relaxed mb-7 max-w-xl">
+                    {s.subtitle}
+                  </p>
+
+                  {/* Buttons */}
+                  <div className="flex flex-col sm:flex-row gap-4 mb-8">
+                    <Link to={s.primaryLink} className="bg-white text-blue-600 px-8 py-4 rounded-full font-semibold text-base hover:bg-blue-50 transition transform hover:scale-105 text-center">
+                      {s.primaryLabel}
+                    </Link>
+                    <Link to={s.secondaryLink} className="border-2 border-white text-white px-8 py-4 rounded-full font-semibold text-base hover:bg-white hover:text-blue-600 transition text-center">
+                      {s.secondaryLabel}
+                    </Link>
+                  </div>
+
+                  {/* Feature Info - Desktop only */}
+                  <div className="hidden lg:grid grid-cols-3 gap-8 pt-6 border-t border-white/20">
+                    <div className="flex flex-col">
+                      <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mb-2">
+                        <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
+                        </svg>
+                      </div>
+                      <p className="text-sm font-semibold text-white">Professional Quality</p>
+                      <p className="text-xs text-gray-200">Expert service</p>
+                    </div>
+                    <div className="flex flex-col">
+                      <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mb-2">
+                        <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                        </svg>
+                      </div>
+                      <p className="text-sm font-semibold text-white">24/7 Available</p>
+                      <p className="text-xs text-gray-200">Always open</p>
+                    </div>
+                    <div className="flex flex-col">
+                      <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mb-2">
+                        <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                        </svg>
+                      </div>
+                      <p className="text-sm font-semibold text-white">Fast & Efficient</p>
+                      <p className="text-xs text-gray-200">Quick turnaround</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-
-            {/* Headline */}
-            <h1 className="text-4xl lg:text-5xl font-bold text-white leading-tight mb-5">
-              {slide.headline}
-            </h1>
-
-            {/* Subtitle */}
-            <p className="text-base lg:text-lg text-gray-100 leading-relaxed mb-7 max-w-xl">
-              {slide.subtitle}
-            </p>
-
-            {/* Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-8">
-              <Link to={slide.primaryLink} className="bg-white text-blue-600 px-8 py-4 rounded-full font-semibold text-base hover:bg-blue-50 transition transform hover:scale-105 text-center">
-                {slide.primaryLabel}
-              </Link>
-              <Link to={slide.secondaryLink} className="border-2 border-white text-white px-8 py-4 rounded-full font-semibold text-base hover:bg-white hover:text-blue-600 transition text-center">
-                {slide.secondaryLabel}
-              </Link>
-            </div>
-
-            {/* Feature Info - Desktop only */}
-            <div className="hidden lg:grid grid-cols-3 gap-8 pt-6 border-t border-white/20">
-              <div className="flex flex-col">
-                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mb-2">
-                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
-                  </svg>
-                </div>
-                <p className="text-sm font-semibold text-white">Professional Quality</p>
-                <p className="text-xs text-gray-200">Expert service</p>
-              </div>
-              <div className="flex flex-col">
-                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mb-2">
-                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                  </svg>
-                </div>
-                <p className="text-sm font-semibold text-white">24/7 Available</p>
-                <p className="text-xs text-gray-200">Always open</p>
-              </div>
-              <div className="flex flex-col">
-                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mb-2">
-                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-                  </svg>
-                </div>
-                <p className="text-sm font-semibold text-white">Fast & Efficient</p>
-                <p className="text-xs text-gray-200">Quick turnaround</p>
-              </div>
-            </div>
-          </div>
+          ))}
         </div>
+
+        {/* Left Arrow — desktop only */}
+        <button
+          onClick={() => { goPrev(); setAutoKey(k => k + 1); }}
+          aria-label="Previous slide"
+          className="hidden lg:flex absolute left-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-white/20 hover:bg-white/40 backdrop-blur-sm items-center justify-center transition-colors"
+        >
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+
+        {/* Right Arrow — desktop only */}
+        <button
+          onClick={() => { goNext(); setAutoKey(k => k + 1); }}
+          aria-label="Next slide"
+          className="hidden lg:flex absolute right-4 top-1/2 -translate-y-1/2 z-20 w-11 h-11 rounded-full bg-white/20 hover:bg-white/40 backdrop-blur-sm items-center justify-center transition-colors"
+        >
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
 
         {/* Slide Dots */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-3 z-20">
@@ -156,7 +291,7 @@ export default function HomePage() {
               onClick={() => goToSlide(i)}
               aria-label={`Go to slide ${i + 1}`}
               className={`rounded-full transition-all duration-300 ${
-                i === currentSlide
+                i === visualIdx
                   ? 'w-6 h-3 bg-white'
                   : 'w-3 h-3 bg-white/50 hover:bg-white/80'
               }`}
